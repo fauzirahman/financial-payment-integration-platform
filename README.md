@@ -1,59 +1,203 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Financial Payment Integration Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A portfolio-grade finance and payment backend built with **Laravel 12**, designed to demonstrate financial domain modeling, payment gateway integration, idempotency, webhook processing, and double-entry bookkeeping.
 
-## About Laravel
+## Architecture
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```text
+Client / Postman
+      |
+      v
+Laravel API
+      |
+      +--> PaymentController
+      |       |
+      |       +--> StorePaymentRequest
+      |       +--> PaymentService
+      |               |
+      |               +--> IdempotencyService
+      |               +--> PaymentGatewayInterface
+      |               |       +--> MockPaymentGateway
+      |               +--> LedgerService
+      |
+      +--> PaymentWebhookController
+              |
+              +--> PaymentWebhookService
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+PostgreSQL
+  ├── customers / accounts
+  ├── payments
+  ├── financial_transactions
+  ├── ledger_entries
+  ├── chart_of_accounts
+  ├── idempotency_keys
+  └── payment_webhook_events
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Redis (available for cache/queue)
+```
 
-## Learning Laravel
+## Implemented
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- Customer and account domain
+- Payment creation API
+- Mock payment gateway abstraction
+- Payment status lifecycle: `PENDING -> SUCCESS/FAILED`
+- **Idempotency-Key** support and replay protection
+- Double-entry ledger with debit/credit balancing
+- Automatic ledger posting for successful payments
+- Chart of Accounts
+- Payment webhook event persistence and duplicate-event protection
+- UUID primary keys for financial domain entities
+- Database transactions around payment + ledger posting
+- Feature tests for ledger and payment/idempotency flows
+- PostgreSQL + Redis Docker infrastructure
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## API
 
-## Laravel Sponsors
+### Health
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```http
+GET /api/health
+```
 
-### Premium Partners
+### Create payment
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```http
+POST /api/payments
+Idempotency-Key: pay-demo-001
+Content-Type: application/json
+```
 
-## Contributing
+```json
+{
+  "payment_number": "PAY-000001",
+  "customer_id": "<customer-uuid>",
+  "amount": "150000.00",
+  "currency": "IDR",
+  "method": "BANK_TRANSFER",
+  "description": "Demo customer payment"
+}
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+A successful payment creates:
 
-## Code of Conduct
+1. A `payments` record.
+2. A mock gateway transaction ID.
+3. A balanced `financial_transactions` record.
+4. Two `ledger_entries` records:
+   - Debit `1100 Cash / Bank`
+   - Credit `4000 Payment Revenue`
+5. A completed `idempotency_keys` record.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Repeating the same request with the same `Idempotency-Key` returns the original payment instead of charging the gateway again.
 
-## Security Vulnerabilities
+### Mock webhook
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```http
+POST /api/webhooks/mock-payment
+Content-Type: application/json
+```
 
-## License
+```json
+{
+  "event_id": "evt-demo-001",
+  "event_type": "payment.succeeded",
+  "gateway": "mock",
+  "gateway_transaction_id": "MOCK-XXXXXXXX"
+}
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Local setup
+
+Requirements:
+
+- PHP 8.2+
+- Composer
+- Node.js + npm
+- Docker + Docker Compose
+
+Install dependencies:
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
+
+Start infrastructure:
+
+```bash
+docker compose up -d
+```
+
+Set PostgreSQL values in `.env`:
+
+```dotenv
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5434
+DB_DATABASE=financial_payment
+DB_USERNAME=financial_user
+DB_PASSWORD=financial_password
+```
+
+Then:
+
+```bash
+php artisan migrate --seed
+npm install
+npm run build
+php artisan serve
+```
+
+The API is available at `http://127.0.0.1:8000/api`.
+
+## Test
+
+```bash
+php artisan test
+```
+
+The test suite covers ledger balancing, rollback behavior, duplicate transaction numbers, debit/credit validation, payment processing, and idempotent replay.
+
+## Suggested next portfolio milestones
+
+### Phase 2 — Finance
+
+- Account balance service with row-level locking
+- Transfer between customer accounts
+- Transaction history and pagination
+- Reconciliation report
+- Trial balance / general ledger report
+- Fee and tax handling
+
+### Phase 3 — Payment
+
+- Real gateway adapter behind `PaymentGatewayInterface`
+- Signed webhook verification
+- Refunds
+- Payment expiration
+- Retry policy
+- Gateway request/response audit log
+
+### Phase 4 — Enterprise quality
+
+- Laravel Sanctum authentication
+- Roles/permissions
+- Rate limiting
+- Structured audit logs
+- OpenAPI documentation
+- Queue-based webhook processing
+- Dockerized application + CI/CD
+- Dashboard for payment and finance KPIs
+
+## Portfolio positioning
+
+This project demonstrates more than CRUD. It is intentionally designed to show backend engineering concepts relevant to financial systems:
+
+- **Consistency:** payment and ledger posting are committed atomically.
+- **Idempotency:** repeated payment requests do not create duplicate charges.
+- **Accounting integrity:** every posted transaction must balance debit and credit.
+- **Extensibility:** payment gateways are accessed through an interface.
+- **Traceability:** payments, financial transactions, ledger entries, idempotency records, and webhook events can be correlated.
+- **Failure handling:** invalid or inconsistent financial operations are rejected and rolled back.

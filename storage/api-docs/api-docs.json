@@ -1,0 +1,408 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Financial Payment Integration API",
+        "description": "REST API for financial payment integration, transaction processing, idempotency handling, webhook processing, and payment gateway integration.",
+        "contact": {
+            "name": "Fauzi Rahman"
+        },
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/health": {
+            "get": {
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "description": "Returns the current availability status of the Financial Payment Integration API.",
+                "operationId": "healthCheck",
+                "responses": {
+                    "200": {
+                        "description": "API is running",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Financial Payment Integration API is running."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "servers": [
+                    {
+                        "url": "/api",
+                        "description": "Financial Payment Integration API"
+                    }
+                ]
+            }
+        },
+        "/payments": {
+            "post": {
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Create and process payment",
+                "description": "Creates a payment and processes it through the configured payment gateway. The Idempotency-Key header prevents duplicate payment processing.",
+                "operationId": "createPayment",
+                "parameters": [
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "description": "Unique key used to safely retry the same payment request without creating a duplicate payment.",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 255
+                        },
+                        "example": "payment-request-2026-000001"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "payment_number",
+                                    "customer_id",
+                                    "amount",
+                                    "currency",
+                                    "method"
+                                ],
+                                "properties": {
+                                    "payment_number": {
+                                        "type": "string",
+                                        "example": "PAY-2026-000001",
+                                        "maxLength": 40
+                                    },
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "example": "550e8400-e29b-41d4-a716-446655440000"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "format": "double",
+                                        "example": 150000,
+                                        "minimum": 0.01000000000000000020816681711721685132943093776702880859375
+                                    },
+                                    "currency": {
+                                        "type": "string",
+                                        "pattern": "^[A-Z]{3}$",
+                                        "example": "IDR",
+                                        "maxLength": 3,
+                                        "minLength": 3
+                                    },
+                                    "method": {
+                                        "type": "string",
+                                        "example": "BANK_TRANSFER",
+                                        "maxLength": 30
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "example": "Payment for invoice INV-2026-000001",
+                                        "nullable": true,
+                                        "maxLength": 1000
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Payment processed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment processed successfully."
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Payment"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "Idempotent request replayed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment processed successfully."
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Payment"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Idempotency-Key header is missing",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Idempotency-Key header is required."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Payment request conflict",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment request conflict."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Payment processing failed or validation failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment failed."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "servers": [
+                    {
+                        "url": "/api",
+                        "description": "Financial Payment Integration API"
+                    }
+                ]
+            }
+        },
+        "/webhooks/mock-payment": {
+            "post": {
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Process mock payment webhook",
+                "description": "Receives and processes a payment event from the mock payment gateway.",
+                "operationId": "processMockPaymentWebhook",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "event_id",
+                                    "event_type",
+                                    "gateway",
+                                    "gateway_transaction_id"
+                                ],
+                                "properties": {
+                                    "event_id": {
+                                        "type": "string",
+                                        "example": "evt_2026_000001",
+                                        "maxLength": 100
+                                    },
+                                    "event_type": {
+                                        "type": "string",
+                                        "example": "payment.success",
+                                        "maxLength": 50
+                                    },
+                                    "gateway": {
+                                        "type": "string",
+                                        "example": "mock_gateway",
+                                        "maxLength": 50
+                                    },
+                                    "gateway_transaction_id": {
+                                        "type": "string",
+                                        "example": "GTX-2026-000001",
+                                        "maxLength": 100
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Webhook processed successfully."
+                                        },
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Webhook validation failed"
+                    }
+                },
+                "servers": [
+                    {
+                        "url": "/api",
+                        "description": "Financial Payment Integration API"
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Payment": {
+                "description": "Payment transaction resource",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "payment_number": {
+                        "type": "string",
+                        "example": "PAY-2026-000001"
+                    },
+                    "customer_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "example": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "amount": {
+                        "type": "string",
+                        "example": "150000.00"
+                    },
+                    "currency": {
+                        "type": "string",
+                        "example": "IDR"
+                    },
+                    "method": {
+                        "type": "string",
+                        "example": "BANK_TRANSFER"
+                    },
+                    "status": {
+                        "type": "string",
+                        "example": "SUCCESS"
+                    },
+                    "gateway": {
+                        "type": "string",
+                        "example": "mock_gateway",
+                        "nullable": true
+                    },
+                    "gateway_transaction_id": {
+                        "type": "string",
+                        "example": "GTX-2026-000001",
+                        "nullable": true
+                    },
+                    "paid_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-08-29T07:00:00Z",
+                        "nullable": true
+                    },
+                    "description": {
+                        "type": "string",
+                        "example": "Payment for invoice INV-2026-000001",
+                        "nullable": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-08-29T06:55:00Z"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "example": "2026-08-29T07:00:00Z"
+                    }
+                },
+                "type": "object"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Health",
+            "description": "Application health and system status"
+        },
+        {
+            "name": "Payments",
+            "description": "Payment processing and transaction management"
+        },
+        {
+            "name": "Webhooks",
+            "description": "Payment gateway webhook processing"
+        }
+    ]
+}
