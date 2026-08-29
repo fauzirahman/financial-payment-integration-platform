@@ -6,21 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePaymentRequest;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use RuntimeException;
 
 class PaymentController extends Controller
 {
-    public function __construct(
-        private readonly PaymentService $paymentService
-    ) {
-    }
+    public function __construct(private readonly PaymentService $paymentService) {}
 
-    public function store(
-        StorePaymentRequest $request
-    ): JsonResponse {
-        $idempotencyKey = $request->header(
-            'Idempotency-Key'
-        );
+    public function store(StorePaymentRequest $request): JsonResponse
+    {
+        $idempotencyKey = $request->header('Idempotency-Key');
 
         if (!$idempotencyKey) {
             return response()->json([
@@ -29,15 +23,27 @@ class PaymentController extends Controller
             ], 400);
         }
 
-        $payment = $this->paymentService->create(
-            $request->validated(),
-            $idempotencyKey
-        );
+        try {
+            $result = $this->paymentService->create(
+                $request->validated(),
+                $idempotencyKey
+            );
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 409);
+        }
+
+        $payment = $result['payment'];
+        $status = $result['replayed'] ? 200 : ($payment->status === 'SUCCESS' ? 201 : 422);
 
         return response()->json([
-            'success' => true,
-            'message' => 'Payment processed successfully.',
+            'success' => $payment->status === 'SUCCESS',
+            'message' => $payment->status === 'SUCCESS'
+                ? 'Payment processed successfully.'
+                : 'Payment failed.',
             'data' => $payment,
-        ], 201);
+        ], $status);
     }
 }
