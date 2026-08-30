@@ -14,21 +14,43 @@ class StorePaymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'payment_number' => ['required', 'string', 'max:40', 'unique:payments,payment_number'],
-            'customer_id' => ['required', 'uuid', 'exists:customers,id'],
-            'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
-            'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
-            'method' => ['required', 'string', 'max:30'],
-            'description' => ['nullable', 'string', 'max:1000'],
-        ];
-    }
+            'payment_number' => [
+                'required',
+                'string',
+                'max:40',
+            ],
 
-    protected function prepareForValidation(): void
-    {
-        if ($this->has('currency')) {
-            $this->merge([
-                'currency' => strtoupper((string) $this->input('currency')),
-            ]);
-        }
+            'customer_id' => [
+                'required',
+                'uuid',
+                'exists:customers,id',
+            ],
+
+            'amount' => [
+                'required',
+                'numeric',
+                'gt:0',
+                'decimal:0,2',
+            ],
+
+            'currency' => [
+                'required',
+                'string',
+                'size:3',
+                'regex:/^[A-Z]{3}$/',
+            ],
+
+            'method' => [
+                'required',
+                'string',
+                'max:30',
+            ],
+
+            'description' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+        ];
     }
 }
