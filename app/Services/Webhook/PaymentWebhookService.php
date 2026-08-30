@@ -11,60 +11,79 @@ class PaymentWebhookService
 {
     public function process(array $payload): PaymentWebhookEvent
     {
-        return DB::transaction(function () use ($payload) {
-            $eventId = $payload['event_id'];
+        $eventId = $payload['event_id'];
 
-            $existing = PaymentWebhookEvent::query()
-                ->where('event_id', $eventId)
-                ->first();
+        $existing = PaymentWebhookEvent::query()
+            ->where('event_id', $eventId)
+            ->first();
 
-            if ($existing) {
-                return $existing;
-            }
+        /*
+         * A successfully processed event is fully idempotent.
+         * Do not process it again.
+         */
+        if ($existing?->status === 'PROCESSED') {
+            return $existing;
+        }
 
-            $event = PaymentWebhookEvent::create([
-                'event_id' => $eventId,
-                'event_type' => $payload['event_type'],
-                'gateway' => $payload['gateway'],
-                'gateway_transaction_id' =>
-                    $payload['gateway_transaction_id'],
-                'payload' => $payload,
-                'status' => 'RECEIVED',
-            ]);
+        /*
+         * Create the event outside the processing transaction.
+         *
+         * This is important because a failed webhook must remain
+         * persisted for audit, troubleshooting, and future retry.
+         */
+        $event = $existing ?? PaymentWebhookEvent::create([
+            'event_id' => $eventId,
+            'event_type' => $payload['event_type'],
+            'gateway' => $payload['gateway'],
+            'gateway_transaction_id' => $payload['gateway_transaction_id'],
+            'payload' => $payload,
+            'status' => 'RECEIVED',
+        ]);
 
-            $payment = Payment::query()
-                ->where(
-                    'gateway_transaction_id',
-                    $payload['gateway_transaction_id']
-                )
-                ->lockForUpdate()
-                ->first();
+        try {
+            $processedEvent = DB::transaction(function () use ($event, $payload) {
+                $payment = Payment::query()
+                    ->where(
+                        'gateway_transaction_id',
+                        $payload['gateway_transaction_id']
+                    )
+                    ->lockForUpdate()
+                    ->first();
 
-            if (!$payment) {
+                if (!$payment) {
+                    throw new RuntimeException(
+                        'Payment not found for webhook event.'
+                    );
+                }
+
+                if ($payload['event_type'] === 'payment.succeeded') {
+                    $payment->update([
+                        'status' => 'SUCCESS',
+                        'paid_at' => $payment->paid_at ?? now(),
+                    ]);
+                }
+
                 $event->update([
-                    'status' => 'FAILED',
-                    'error_message' =>
-                        'Payment was not found.',
+                    'status' => 'PROCESSED',
+                    'processed_at' => now(),
+                    'error_message' => null,
                 ]);
 
-                throw new RuntimeException(
-                    'Payment not found for webhook event.'
-                );
-            }
+                return $event->fresh();
+            });
 
-            if ($payload['event_type'] === 'payment.succeeded') {
-                $payment->update([
-                    'status' => 'SUCCESS',
-                    'paid_at' => $payment->paid_at ?? now(),
-                ]);
-            }
-
+            return $processedEvent;
+        } catch (\Throwable $exception) {
+            /*
+             * This update is intentionally outside the transaction above.
+             * Therefore FAILED events are not rolled back.
+             */
             $event->update([
-                'status' => 'PROCESSED',
-                'processed_at' => now(),
+                'status' => 'FAILED',
+                'error_message' => $exception->getMessage(),
             ]);
 
-            return $event->fresh();
-        });
+            throw $exception;
+        }
     }
 }
