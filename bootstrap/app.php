@@ -15,5 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
-    })->create();
+    $exceptions->render(function (
+        \App\Exceptions\IdempotencyConflictException $exception
+    ) {
+        return response()->json([
+            'success' => false,
+            'message' => $exception->getMessage(),
+        ], 409);
+    });
+})->create();

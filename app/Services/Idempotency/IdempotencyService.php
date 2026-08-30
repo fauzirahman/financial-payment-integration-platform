@@ -2,6 +2,7 @@
 
 namespace App\Services\Idempotency;
 
+use App\Exceptions\IdempotencyConflictException;
 use App\Models\IdempotencyKey;
 use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
@@ -68,7 +69,7 @@ class IdempotencyService
     private function validateExisting(IdempotencyKey $record, string $requestHash): IdempotencyKey
     {
         if (!hash_equals($record->request_hash, $requestHash)) {
-            throw new RuntimeException(
+            throw new IdempotencyConflictException(
                 'Idempotency key was already used with a different request.'
             );
         }
@@ -78,7 +79,9 @@ class IdempotencyService
         }
 
         if ($record->status === 'FAILED') {
-            throw new RuntimeException('The previous request with this idempotency key failed.');
+            throw new RuntimeException(
+                'The previous request with this idempotency key failed.'
+            );
         }
 
         throw new RuntimeException(
