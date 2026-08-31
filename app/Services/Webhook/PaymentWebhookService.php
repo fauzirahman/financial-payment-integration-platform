@@ -9,6 +9,11 @@ use RuntimeException;
 
 class PaymentWebhookService
 {
+    public function __construct(
+        private readonly WebhookRetryService $retryService,
+    ) {
+    }
+
     public function process(array $payload): PaymentWebhookEvent
     {
         $eventId = $payload['event_id'];
@@ -18,18 +23,23 @@ class PaymentWebhookService
             ->first();
 
         /*
-         * A successfully processed event is fully idempotent.
-         * Do not process it again.
+         * Successfully processed events are fully idempotent.
          */
         if ($existing?->status === 'PROCESSED') {
             return $existing;
         }
 
         /*
-         * Create the event outside the processing transaction.
-         *
-         * This is important because a failed webhook must remain
-         * persisted for audit, troubleshooting, and future retry.
+         * Permanently failed events must not be processed again
+         * automatically.
+         */
+        if ($existing?->status === 'PERMANENTLY_FAILED') {
+            return $existing;
+        }
+
+        /*
+         * Reuse an existing FAILED event during retry.
+         * Otherwise create a new event.
          */
         $event = $existing ?? PaymentWebhookEvent::create([
             'event_id' => $eventId,
@@ -38,6 +48,8 @@ class PaymentWebhookService
             'gateway_transaction_id' => $payload['gateway_transaction_id'],
             'payload' => $payload,
             'status' => 'RECEIVED',
+            'attempts' => 0,
+            'max_attempts' => 5,
         ]);
 
         try {
@@ -66,6 +78,7 @@ class PaymentWebhookService
                 $event->update([
                     'status' => 'PROCESSED',
                     'processed_at' => now(),
+                    'next_retry_at' => null,
                     'error_message' => null,
                 ]);
 
@@ -74,14 +87,12 @@ class PaymentWebhookService
 
             return $processedEvent;
         } catch (\Throwable $exception) {
-            /*
-             * This update is intentionally outside the transaction above.
-             * Therefore FAILED events are not rolled back.
-             */
             $event->update([
                 'status' => 'FAILED',
                 'error_message' => $exception->getMessage(),
             ]);
+
+            $event = $this->retryService->scheduleRetry($event);
 
             throw $exception;
         }

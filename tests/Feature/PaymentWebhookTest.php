@@ -209,4 +209,29 @@ class PaymentWebhookTest extends TestCase
                 ->count()
         );
     }
+
+    public function test_failed_webhook_schedules_retry_metadata(): void
+    {
+        $response = $this->postJson('/api/webhooks/mock-payment', [
+            'event_id' => 'evt-webhook-retry-metadata',
+            'event_type' => 'payment.succeeded',
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'missing-payment-retry-metadata',
+        ]);
+
+        $response->assertStatus(500);
+
+        $this->assertDatabaseHas('payment_webhook_events', [
+            'event_id' => 'evt-webhook-retry-metadata',
+            'status' => 'FAILED',
+            'attempts' => 1,
+            'max_attempts' => 5,
+        ]);
+
+        $event = PaymentWebhookEvent::query()
+            ->where('event_id', 'evt-webhook-retry-metadata')
+            ->firstOrFail();
+
+        $this->assertNotNull($event->next_retry_at);
+    }
 }

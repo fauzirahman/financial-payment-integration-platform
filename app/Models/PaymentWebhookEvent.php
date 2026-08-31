@@ -18,7 +18,10 @@ class PaymentWebhookEvent extends Model
         'gateway_transaction_id',
         'payload',
         'status',
+        'attempts',
+        'max_attempts',
         'processed_at',
+        'next_retry_at',
         'error_message',
     ];
 
@@ -26,7 +29,10 @@ class PaymentWebhookEvent extends Model
     {
         return [
             'payload' => 'array',
+            'attempts' => 'integer',
+            'max_attempts' => 'integer',
             'processed_at' => 'datetime',
+            'next_retry_at' => 'datetime',
         ];
     }
 }
