@@ -11,9 +11,29 @@ Route::get('/health', function () {
     ]);
 });
 
+Route::get('/payments', [
+    PaymentController::class,
+    'index',
+]);
+
+Route::get('/payments/{id}', [
+    PaymentController::class,
+    'show',
+]);
+
 Route::post('/payments', [
     PaymentController::class,
     'store',
+]);
+
+Route::get('/webhooks', [
+    PaymentWebhookController::class,
+    'index',
+]);
+
+Route::get('/webhooks/{id}', [
+    PaymentWebhookController::class,
+    'show',
 ]);
 
 Route::post('/webhooks/mock-payment', [
