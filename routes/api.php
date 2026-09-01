@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -10,6 +11,31 @@ Route::get('/health', function () {
         'message' => 'Financial Payment Integration API is running.',
     ]);
 });
+
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [
+        AuthController::class,
+        'login',
+    ]);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/me', [
+            AuthController::class,
+            'me',
+        ]);
+
+        Route::post('/logout', [
+            AuthController::class,
+            'logout',
+        ]);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Payments
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/payments', [
     PaymentController::class,
@@ -25,6 +51,12 @@ Route::post('/payments', [
     PaymentController::class,
     'store',
 ]);
+
+/*
+|--------------------------------------------------------------------------
+| Webhooks
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/webhooks', [
     PaymentWebhookController::class,
