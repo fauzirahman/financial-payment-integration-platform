@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PaymentWebhookEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use LogicException;
 use Tests\TestCase;
 
 class PaymentWebhookTest extends TestCase
@@ -34,7 +35,7 @@ class PaymentWebhookTest extends TestCase
             'amount' => '150000.00',
             'currency' => 'IDR',
             'method' => 'CARD',
-            'status' => 'PENDING',
+            'status' => Payment::STATUS_PENDING,
             'gateway' => 'mock',
             'gateway_transaction_id' => 'mock-tx-webhook-001',
         ]);
@@ -55,7 +56,7 @@ class PaymentWebhookTest extends TestCase
 
         $this->assertDatabaseHas('payments', [
             'id' => $payment->id,
-            'status' => 'SUCCESS',
+            'status' => Payment::STATUS_SUCCESS,
         ]);
 
         $this->assertDatabaseHas('payment_webhook_events', [
@@ -72,7 +73,7 @@ class PaymentWebhookTest extends TestCase
             'amount' => '250000.00',
             'currency' => 'IDR',
             'method' => 'BANK_TRANSFER',
-            'status' => 'PENDING',
+            'status' => Payment::STATUS_PENDING,
             'gateway' => 'mock',
             'gateway_transaction_id' => 'mock-tx-webhook-002',
         ]);
@@ -174,7 +175,7 @@ class PaymentWebhookTest extends TestCase
             'amount' => '300000.00',
             'currency' => 'IDR',
             'method' => 'CARD',
-            'status' => 'PENDING',
+            'status' => Payment::STATUS_PENDING,
             'gateway' => 'mock',
             'gateway_transaction_id' => 'retry-payment-tx-004',
         ]);
@@ -193,7 +194,7 @@ class PaymentWebhookTest extends TestCase
 
         $this->assertDatabaseHas('payments', [
             'id' => $payment->id,
-            'status' => 'SUCCESS',
+            'status' => Payment::STATUS_SUCCESS,
         ]);
 
         $this->assertDatabaseHas('payment_webhook_events', [
@@ -233,5 +234,166 @@ class PaymentWebhookTest extends TestCase
             ->firstOrFail();
 
         $this->assertNotNull($event->next_retry_at);
+    }
+
+    public function test_success_state_is_terminal(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-SUCCESS',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_SUCCESS,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-success',
+        ]);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'Invalid payment state transition: SUCCESS -> FAILED.'
+        );
+
+        $payment->transitionTo(Payment::STATUS_FAILED);
+    }
+
+    public function test_failed_state_is_terminal(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-FAILED',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_FAILED,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-failed',
+        ]);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'Invalid payment state transition: FAILED -> SUCCESS.'
+        );
+
+        $payment->transitionTo(Payment::STATUS_SUCCESS);
+    }
+
+    public function test_pending_can_transition_to_success(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-PENDING-SUCCESS',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_PENDING,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-pending-success',
+        ]);
+
+        $payment->transitionTo(Payment::STATUS_SUCCESS);
+        $payment->save();
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'status' => Payment::STATUS_SUCCESS,
+        ]);
+    }
+
+    public function test_pending_can_transition_to_failed(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-PENDING-FAILED',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_PENDING,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-pending-failed',
+        ]);
+
+        $payment->transitionTo(Payment::STATUS_FAILED);
+        $payment->save();
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'status' => Payment::STATUS_FAILED,
+        ]);
+    }
+
+    public function test_success_to_success_is_idempotent(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-SAME-SUCCESS',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_SUCCESS,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-same-success',
+        ]);
+
+        $payment->transitionTo(Payment::STATUS_SUCCESS);
+
+        $this->assertSame(
+            Payment::STATUS_SUCCESS,
+            $payment->status
+        );
+    }
+
+    public function test_failed_to_failed_is_idempotent(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-STATE-SAME-FAILED',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_FAILED,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-state-same-failed',
+        ]);
+
+        $payment->transitionTo(Payment::STATUS_FAILED);
+
+        $this->assertSame(
+            Payment::STATUS_FAILED,
+            $payment->status
+        );
+    }
+
+    public function test_webhook_cannot_move_failed_payment_to_success(): void
+    {
+        $payment = Payment::create([
+            'payment_number' => 'PAY-WEBHOOK-STATE-FAILED',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+            'status' => Payment::STATUS_FAILED,
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-tx-state-failed',
+        ]);
+
+        $response = $this->postJson('/api/webhooks/mock-payment', [
+            'event_id' => 'evt-webhook-state-failed',
+            'event_type' => 'payment.succeeded',
+            'gateway' => 'mock',
+            'gateway_transaction_id' => 'mock-tx-state-failed',
+        ]);
+
+        $response->assertStatus(500);
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'status' => Payment::STATUS_FAILED,
+        ]);
+
+        $this->assertDatabaseHas('payment_webhook_events', [
+            'event_id' => 'evt-webhook-state-failed',
+            'status' => 'FAILED',
+        ]);
     }
 }

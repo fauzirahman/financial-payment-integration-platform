@@ -17,7 +17,8 @@ class PaymentService
         private readonly PaymentGatewayInterface $gateway,
         private readonly LedgerService $ledgerService,
         private readonly IdempotencyService $idempotencyService,
-    ) {}
+    ) {
+    }
 
     /**
      * @return array{payment: Payment, replayed: bool}
@@ -33,9 +34,14 @@ class PaymentService
         );
 
         if ($idempotency->status === 'COMPLETED') {
-            $payment = Payment::query()->findOrFail($idempotency->resource_id);
+            $payment = Payment::query()->findOrFail(
+                $idempotency->resource_id
+            );
 
-            return ['payment' => $payment, 'replayed' => true];
+            return [
+                'payment' => $payment,
+                'replayed' => true,
+            ];
         }
 
         try {
@@ -46,7 +52,7 @@ class PaymentService
                     'amount' => $data['amount'],
                     'currency' => $data['currency'],
                     'method' => $data['method'],
-                    'status' => 'PENDING',
+                    'status' => Payment::STATUS_PENDING,
                     'gateway' => 'mock',
                     'description' => $data['description'] ?? null,
                 ]);
@@ -54,16 +60,20 @@ class PaymentService
                 $result = $this->gateway->charge($payment);
 
                 if (!$result['success']) {
-                    $payment->update(['status' => 'FAILED']);
+                    $payment->transitionTo(Payment::STATUS_FAILED);
+                    $payment->save();
 
                     return $payment->fresh();
                 }
 
-                $payment->update([
-                    'status' => 'SUCCESS',
-                    'gateway_transaction_id' => $result['gateway_transaction_id'],
-                    'paid_at' => now(),
-                ]);
+                $payment->transitionTo(Payment::STATUS_SUCCESS);
+
+                $payment->gateway_transaction_id =
+                    $result['gateway_transaction_id'];
+
+                $payment->paid_at = now();
+
+                $payment->save();
 
                 $this->postSuccessfulPayment($payment->fresh());
 
@@ -71,8 +81,8 @@ class PaymentService
             });
 
             $body = [
-                'success' => $payment->status === 'SUCCESS',
-                'message' => $payment->status === 'SUCCESS'
+                'success' => $payment->status === Payment::STATUS_SUCCESS,
+                'message' => $payment->status === Payment::STATUS_SUCCESS
                     ? 'Payment processed successfully.'
                     : 'Payment failed.',
                 'data' => $payment,
@@ -85,9 +95,15 @@ class PaymentService
                 $payment->id
             );
 
-            return ['payment' => $payment, 'replayed' => false];
+            return [
+                'payment' => $payment,
+                'replayed' => false,
+            ];
         } catch (\Throwable $exception) {
-            $this->idempotencyService->fail($idempotency, $exception->getMessage());
+            $this->idempotencyService->fail(
+                $idempotency,
+                $exception->getMessage()
+            );
 
             throw $exception;
         }
@@ -95,8 +111,15 @@ class PaymentService
 
     private function postSuccessfulPayment(Payment $payment): void
     {
-        $cash = ChartOfAccount::query()->where('code', '1100')->where('is_active', true)->first();
-        $revenue = ChartOfAccount::query()->where('code', '4000')->where('is_active', true)->first();
+        $cash = ChartOfAccount::query()
+            ->where('code', '1100')
+            ->where('is_active', true)
+            ->first();
+
+        $revenue = ChartOfAccount::query()
+            ->where('code', '4000')
+            ->where('is_active', true)
+            ->first();
 
         if (!$cash || !$revenue) {
             throw new InvalidArgumentException(
@@ -105,7 +128,12 @@ class PaymentService
         }
 
         $this->ledgerService->create([
-            'transaction_number' => 'LEDGER-' . str_replace('-', '', Str::upper($payment->id)),
+            'transaction_number' =>
+                'LEDGER-' . str_replace(
+                    '-',
+                    '',
+                    Str::upper($payment->id)
+                ),
             'type' => 'PAYMENT',
             'transaction_date' => $payment->paid_at ?? now(),
             'currency' => $payment->currency,
@@ -132,18 +160,32 @@ class PaymentService
 
     private function validate(array $data): void
     {
-        foreach (['payment_number', 'customer_id', 'amount', 'currency', 'method'] as $field) {
+        foreach (
+            [
+                'payment_number',
+                'customer_id',
+                'amount',
+                'currency',
+                'method',
+            ] as $field
+        ) {
             if (!array_key_exists($field, $data)) {
-                throw new InvalidArgumentException("Missing required field: {$field}.");
+                throw new InvalidArgumentException(
+                    "Missing required field: {$field}."
+                );
             }
         }
 
         if (!is_numeric($data['amount']) || $data['amount'] <= 0) {
-            throw new InvalidArgumentException('Payment amount must be greater than zero.');
+            throw new InvalidArgumentException(
+                'Payment amount must be greater than zero.'
+            );
         }
 
         if (!preg_match('/^[A-Z]{3}$/', $data['currency'])) {
-            throw new InvalidArgumentException('Currency must be a valid 3-letter uppercase code.');
+            throw new InvalidArgumentException(
+                'Currency must be a valid 3-letter uppercase code.'
+            );
         }
     }
 }

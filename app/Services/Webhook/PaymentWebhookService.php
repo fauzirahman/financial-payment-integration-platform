@@ -53,37 +53,45 @@ class PaymentWebhookService
         ]);
 
         try {
-            $processedEvent = DB::transaction(function () use ($event, $payload) {
-                $payment = Payment::query()
-                    ->where(
-                        'gateway_transaction_id',
-                        $payload['gateway_transaction_id']
-                    )
-                    ->lockForUpdate()
-                    ->first();
+            $processedEvent = DB::transaction(
+                function () use ($event, $payload) {
+                    $payment = Payment::query()
+                        ->where(
+                            'gateway_transaction_id',
+                            $payload['gateway_transaction_id']
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
-                if (!$payment) {
-                    throw new RuntimeException(
-                        'Payment not found for webhook event.'
-                    );
-                }
+                    if (!$payment) {
+                        throw new RuntimeException(
+                            'Payment not found for webhook event.'
+                        );
+                    }
 
-                if ($payload['event_type'] === 'payment.succeeded') {
-                    $payment->update([
-                        'status' => 'SUCCESS',
-                        'paid_at' => $payment->paid_at ?? now(),
+                    if (
+                        $payload['event_type'] === 'payment.succeeded'
+                    ) {
+                        $payment->transitionTo(
+                            Payment::STATUS_SUCCESS
+                        );
+
+                        $payment->paid_at =
+                            $payment->paid_at ?? now();
+
+                        $payment->save();
+                    }
+
+                    $event->update([
+                        'status' => 'PROCESSED',
+                        'processed_at' => now(),
+                        'next_retry_at' => null,
+                        'error_message' => null,
                     ]);
+
+                    return $event->fresh();
                 }
-
-                $event->update([
-                    'status' => 'PROCESSED',
-                    'processed_at' => now(),
-                    'next_retry_at' => null,
-                    'error_message' => null,
-                ]);
-
-                return $event->fresh();
-            });
+            );
 
             return $processedEvent;
         } catch (\Throwable $exception) {
