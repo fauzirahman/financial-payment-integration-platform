@@ -6,6 +6,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Customer;
 use App\Models\IdempotencyKey;
 use App\Models\Payment;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -52,8 +53,21 @@ class PaymentApiTest extends TestCase
         ]);
     }
 
+    private function authenticate(): void
+    {
+        $user = User::factory()->create();
+
+        $token = $user
+            ->createToken('test-token')
+            ->plainTextToken;
+
+        $this->withToken($token);
+    }
+
     public function test_payment_is_processed_and_posted_to_ledger(): void
     {
+        $this->authenticate();
+
         $response = $this
             ->withHeader('Idempotency-Key', 'pay-test-001')
             ->postJson('/api/payments', [
@@ -74,6 +88,7 @@ class PaymentApiTest extends TestCase
         ]);
 
         $this->assertDatabaseCount('ledger_entries', 2);
+
         $this->assertDatabaseHas('idempotency_keys', [
             'key' => 'pay-test-001',
             'status' => 'COMPLETED',
@@ -82,6 +97,8 @@ class PaymentApiTest extends TestCase
 
     public function test_same_idempotency_key_replays_existing_payment(): void
     {
+        $this->authenticate();
+
         $payload = [
             'payment_number' => 'PAY-TEST-002',
             'customer_id' => $this->customer->id,
@@ -93,17 +110,22 @@ class PaymentApiTest extends TestCase
         $first = $this
             ->withHeader('Idempotency-Key', 'pay-test-002')
             ->postJson('/api/payments', $payload);
+
         $first->assertCreated();
 
         $second = $this
             ->withHeader('Idempotency-Key', 'pay-test-002')
             ->postJson('/api/payments', $payload);
-        $second->assertOk()->assertJsonPath('success', true);
+
+        $second
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
         $this->assertSame(
             $first->json('data.id'),
             $second->json('data.id')
         );
+
         $this->assertSame(1, Payment::count());
         $this->assertSame(2, \App\Models\LedgerEntry::count());
         $this->assertSame(1, IdempotencyKey::count());
@@ -111,6 +133,8 @@ class PaymentApiTest extends TestCase
 
     public function test_payment_requires_idempotency_key(): void
     {
+        $this->authenticate();
+
         $response = $this->postJson('/api/payments', [
             'payment_number' => 'PAY-TEST-003',
             'customer_id' => $this->customer->id,
@@ -132,6 +156,8 @@ class PaymentApiTest extends TestCase
 
     public function test_same_idempotency_key_with_different_payload_is_rejected(): void
     {
+        $this->authenticate();
+
         $firstPayload = [
             'payment_number' => 'PAY-TEST-004',
             'customer_id' => $this->customer->id,
@@ -168,5 +194,20 @@ class PaymentApiTest extends TestCase
         $this->assertSame(1, Payment::count());
         $this->assertSame(2, \App\Models\LedgerEntry::count());
         $this->assertSame(1, IdempotencyKey::count());
+    }
+
+    public function test_payment_creation_requires_authentication(): void
+    {
+        $response = $this->postJson('/api/payments', [
+            'payment_number' => 'PAY-AUTH-001',
+            'customer_id' => $this->customer->id,
+            'amount' => '100000.00',
+            'currency' => 'IDR',
+            'method' => 'CARD',
+        ]);
+
+        $response->assertUnauthorized();
+
+        $this->assertDatabaseCount('payments', 0);
     }
 }

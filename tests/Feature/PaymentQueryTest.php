@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Customer;
 use App\Models\Payment;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class PaymentQueryTest extends TestCase
@@ -27,6 +29,8 @@ class PaymentQueryTest extends TestCase
 
     public function test_payments_can_be_listed(): void
     {
+        $this->authenticate();
+
         Payment::create([
             'payment_number' => 'PAY-QUERY-001',
             'customer_id' => $this->customer->id,
@@ -61,6 +65,8 @@ class PaymentQueryTest extends TestCase
 
     public function test_payments_can_be_filtered_by_status(): void
     {
+        $this->authenticate();
+
         Payment::create([
             'payment_number' => 'PAY-QUERY-003',
             'customer_id' => $this->customer->id,
@@ -100,6 +106,8 @@ class PaymentQueryTest extends TestCase
 
     public function test_payment_detail_can_be_retrieved(): void
     {
+        $this->authenticate();
+
         $payment = Payment::create([
             'payment_number' => 'PAY-QUERY-005',
             'customer_id' => $this->customer->id,
@@ -135,6 +143,8 @@ class PaymentQueryTest extends TestCase
 
     public function test_unknown_payment_returns_not_found(): void
     {
+        $this->authenticate();
+
         $response = $this->getJson(
             '/api/payments/00000000-0000-0000-0000-000000000000'
         );
@@ -144,6 +154,8 @@ class PaymentQueryTest extends TestCase
 
     public function test_payment_list_supports_pagination(): void
     {
+        $this->authenticate();
+
         for ($i = 1; $i <= 3; $i++) {
             Payment::create([
                 'payment_number' => sprintf(
@@ -169,5 +181,28 @@ class PaymentQueryTest extends TestCase
             ->assertJsonPath('meta.per_page', 2)
             ->assertJsonPath('meta.last_page', 2)
             ->assertJsonCount(2, 'data');
+    }
+
+    private function authenticate(): void
+    {
+        $user = User::factory()->create();
+
+        Sanctum::actingAs($user);
+    }
+
+    public function test_payment_list_requires_authentication(): void
+    {
+        $response = $this->getJson('/api/payments');
+
+        $response->assertUnauthorized();
+    }
+
+    public function test_payment_detail_requires_authentication(): void
+    {
+        $response = $this->getJson(
+            '/api/payments/00000000-0000-0000-0000-000000000000'
+        );
+
+        $response->assertUnauthorized();
     }
 }

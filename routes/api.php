@@ -12,6 +12,12 @@ Route::get('/health', function () {
     ]);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Authentication
+|--------------------------------------------------------------------------
+*/
+
 Route::prefix('auth')->group(function () {
     Route::post('/login', [
         AuthController::class,
@@ -33,40 +39,54 @@ Route::prefix('auth')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Payments
+| Protected Payment APIs
 |--------------------------------------------------------------------------
 */
 
-Route::get('/payments', [
-    PaymentController::class,
-    'index',
-]);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/payments', [
+        PaymentController::class,
+        'index',
+    ]);
 
-Route::get('/payments/{id}', [
-    PaymentController::class,
-    'show',
-]);
+    Route::get('/payments/{id}', [
+        PaymentController::class,
+        'show',
+    ]);
 
-Route::post('/payments', [
-    PaymentController::class,
-    'store',
-]);
+    Route::post('/payments', [
+        PaymentController::class,
+        'store',
+    ]);
+});
 
 /*
 |--------------------------------------------------------------------------
-| Webhooks
+| Protected Webhook Monitoring APIs
 |--------------------------------------------------------------------------
 */
 
-Route::get('/webhooks', [
-    PaymentWebhookController::class,
-    'index',
-]);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/webhooks', [
+        PaymentWebhookController::class,
+        'index',
+    ]);
 
-Route::get('/webhooks/{id}', [
-    PaymentWebhookController::class,
-    'show',
-]);
+    Route::get('/webhooks/{id}', [
+        PaymentWebhookController::class,
+        'show',
+    ]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Public Webhook Callback
+|--------------------------------------------------------------------------
+|
+| This simulates an external payment gateway callback.
+| It does not use Sanctum authentication.
+|
+*/
 
 Route::post('/webhooks/mock-payment', [
     PaymentWebhookController::class,
