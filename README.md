@@ -123,6 +123,19 @@ Database Queue
 - Due retry events are dispatched to the queue
 - Queue worker processes retry jobs asynchronously
 
+
+### Reliability additions
+
+The project also includes the following production-oriented safeguards:
+
+- Centralized `PaymentLedgerService` so both synchronous payment processing and webhook-driven payment completion use the same accounting logic.
+- A successful webhook that completes a `PENDING` payment now creates the required balanced ledger entries.
+- Duplicate delivery of an already processed webhook does not create duplicate ledger transactions.
+- `payment.succeeded` and `payment.failed` are explicitly validated webhook event types.
+- Optional HMAC-SHA256 webhook signature verification through `MOCK_WEBHOOK_SECRET` and `X-Webhook-Signature`.
+- Automatic Laravel scheduler registration to dispatch due webhook retries every minute.
+- Payment API responses now correctly report failed gateway processing as `success: false` with HTTP `422`.
+
 ## API
 
 ### Health
@@ -270,18 +283,29 @@ php artisan key:generate
 docker compose up -d
 ```
 
-### PostgreSQL Configuration
+### PostgreSQL / Neon Configuration
 
-Set the following values in `.env` according to your local Docker configuration:
+Set the Neon connection string in `.env`. Copy the **pooled connection string** from the Neon dashboard for application traffic:
 
 ```dotenv
 DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
-DB_PORT=5434
-DB_DATABASE=financial_payment
-DB_USERNAME=financial_user
-DB_PASSWORD=financial_password
+DB_URL="postgresql://USER:PASSWORD@HOST/neondb?sslmode=require"
+DB_SSLMODE=require
 ```
+
+Alternatively, configure the connection fields individually:
+
+```dotenv
+DB_CONNECTION=pgsql
+DB_HOST=your-neon-host.neon.tech
+DB_PORT=5432
+DB_DATABASE=neondb
+DB_USERNAME=your-neon-user
+DB_PASSWORD=your-neon-password
+DB_SSLMODE=require
+```
+
+For local Docker PostgreSQL, use `127.0.0.1:5434` and the credentials defined in `docker-compose.yml` instead.
 
 ### Queue Configuration
 
@@ -400,12 +424,7 @@ Current coverage includes:
 
 ## Current Test Status
 
-The latest complete test run:
-
-```text
-Tests:    25 passed
-Assertions: 72
-```
+The repository contains automated feature and unit tests covering authentication, payments, idempotency, ledger integrity, webhooks, retries, queue dispatch, queries, and webhook signature validation. Run the suite locally with `php artisan test` after installing Composer dependencies.
 
 The retry service test suite:
 
@@ -467,6 +486,20 @@ Payment records, financial transactions, ledger entries, idempotency keys, and w
 ### Extensibility
 
 Payment gateways are accessed through an interface, allowing the mock gateway to be replaced by a real provider adapter.
+
+## Scheduler
+
+Due webhook retries are scheduled automatically every minute. In a production environment, run the Laravel scheduler worker:
+
+```bash
+php artisan schedule:work
+```
+
+To inspect the registered schedule:
+
+```bash
+php artisan schedule:list
+```
 
 ## Suggested Next Portfolio Milestones
 

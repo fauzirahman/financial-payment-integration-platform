@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePaymentRequest;
+use App\Models\Payment;
 use App\Services\Payment\PaymentQueryService;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\JsonResponse;
@@ -73,12 +74,16 @@ class PaymentController extends Controller
             $idempotencyKey
         );
 
+        $isSuccessful = $result['payment']->status === Payment::STATUS_SUCCESS;
+
         return response()->json([
-            'success' => true,
+            'success' => $isSuccessful,
             'message' => $result['replayed']
                 ? 'Payment response replayed successfully.'
-                : 'Payment processed successfully.',
+                : ($isSuccessful
+                    ? 'Payment processed successfully.'
+                    : 'Payment failed.'),
             'data' => $result['payment'],
-        ], $result['replayed'] ? 200 : 201);
+        ], $result['replayed'] ? 200 : ($isSuccessful ? 201 : 422));
     }
 }

@@ -91,4 +91,4 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::post('/webhooks/mock-payment', [
     PaymentWebhookController::class,
     'handle',
-]);
+])->middleware('webhook.signature');

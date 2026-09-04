@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+
+    'mock_webhook' => [
+        'secret' => env('MOCK_WEBHOOK_SECRET'),
+    ],
 ];

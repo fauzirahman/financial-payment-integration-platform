@@ -69,7 +69,7 @@ use OpenApi\Attributes as OA;
             required: true,
             schema: new OA\Schema(
                 type: 'string',
-                maxLength: 255
+                maxLength: 100
             ),
             example: 'payment-request-2026-000001'
         )
@@ -233,8 +233,18 @@ use OpenApi\Attributes as OA;
     path: '/webhooks/mock-payment',
     operationId: 'processMockPaymentWebhook',
     summary: 'Process mock payment webhook',
-    description: 'Receives and processes a payment event from the mock payment gateway.',
+    description: 'Receives and processes a payment event from the mock payment gateway. When MOCK_WEBHOOK_SECRET is configured, the raw request body must be signed with HMAC-SHA256 and sent in X-Webhook-Signature.',
     tags: ['Webhooks'],
+    parameters: [
+        new OA\Parameter(
+            name: 'X-Webhook-Signature',
+            description: 'HMAC-SHA256 signature of the raw request body. Required when MOCK_WEBHOOK_SECRET is configured.',
+            in: 'header',
+            required: false,
+            schema: new OA\Schema(type: 'string'),
+            example: '9d4e1e23bd5b727046a9e3b1c4a9f1a1a4f6b9f1f4c6e7d8c9b0a1b2c3d4e5f6'
+        )
+    ],
     requestBody: new OA\RequestBody(
         required: true,
         content: new OA\JsonContent(
@@ -255,7 +265,7 @@ use OpenApi\Attributes as OA;
                     property: 'event_type',
                     type: 'string',
                     maxLength: 50,
-                    example: 'payment.success'
+                    example: 'payment.succeeded'
                 ),
                 new OA\Property(
                     property: 'gateway',
