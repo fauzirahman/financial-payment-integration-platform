@@ -18,8 +18,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY composer.json composer.lock ./
+# Copy application first so Laravel's artisan exists
+COPY . .
 
+# Install PHP dependencies
 RUN composer install \
     --no-dev \
     --prefer-dist \
@@ -27,13 +29,9 @@ RUN composer install \
     --no-progress \
     --optimize-autoloader
 
-COPY package.json package-lock.json* ./
-
-RUN npm install
-
-COPY . .
-
-RUN npm run build
+# Install frontend dependencies and build Vite assets
+RUN npm install \
+    && npm run build
 
 RUN mkdir -p \
     storage/framework/cache \
@@ -43,6 +41,6 @@ RUN mkdir -p \
     bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-EXPOSE 10000
+EXPOSE 80
 
-CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-10000}
+CMD php artisan serve --host=0.0.0.0 --port=${PORT:-80}
