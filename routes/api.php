@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +46,12 @@ Route::prefix('auth')->group(function () {
 */
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/customers', [CustomerController::class, 'index']);
+    Route::post('/customers', [CustomerController::class, 'store']);
+    Route::get('/customers/{customer}', [CustomerController::class, 'show']);
+    Route::get('/customers/{customer}/accounts', [AccountController::class, 'index']);
+    Route::post('/customers/{customer}/accounts', [AccountController::class, 'store']);
+
     Route::get('/payments', [
         PaymentController::class,
         'index',
