@@ -444,10 +444,16 @@ Start the API:
 php artisan serve
 ```
 
-The API is available at:
+The API base prefix is `/api`; it is not itself an endpoint, so opening the base URL directly returns `404`. Use a defined endpoint instead, for example:
 
 ```text
-http://127.0.0.1:8000/api
+http://127.0.0.1:8000/api/health
+```
+
+Swagger UI is available at:
+
+```text
+http://127.0.0.1:8000/api/documentation
 ```
 
 ## Database Migrations
