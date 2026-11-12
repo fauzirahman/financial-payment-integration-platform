@@ -2,6 +2,116 @@
 
 A portfolio-grade finance and payment backend built with **Laravel 12**, designed to demonstrate financial domain modeling, payment gateway integration, idempotency, webhook processing, retry mechanisms, queue-based processing, and double-entry bookkeeping.
 
+## Cara Menjalankan Aplikasi
+
+### Persyaratan
+
+- PHP 8.2+
+- Composer
+- Node.js & npm
+- Docker (opsional, tetapi direkomendasikan untuk PostgreSQL dan Redis)
+
+### 1) Install dependency PHP dan frontend
+
+```bash
+cd /opt/lampp/htdocs/financial-payment-integration-platform
+composer install
+npm install
+```
+
+### 2) Buat file environment
+
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+
+### 3) Jalankan database dan Redis
+
+Project ini sudah menyediakan konfigurasi Docker di `docker-compose.yml`.
+
+```bash
+docker compose up -d postgres redis
+```
+
+Setelah itu pastikan `.env` menggunakan konfigurasi berikut:
+
+```env
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5434
+DB_DATABASE=financial_payment
+DB_USERNAME=financial_user
+DB_PASSWORD=financial_password
+
+CACHE_STORE=database
+QUEUE_CONNECTION=database
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=null
+```
+
+### 4) Jalankan migrasi database
+
+```bash
+php artisan migrate
+```
+
+### 5) Jalankan aplikasi
+
+Mode paling sederhana:
+
+```bash
+php artisan serve
+```
+
+Aplikasi akan tersedia di:
+
+```text
+http://localhost:8000
+```
+
+Untuk fitur webhook retry dan queue processing, jalankan worker secara terpisah:
+
+```bash
+php artisan queue:work
+```
+
+Mode lengkap untuk development (server + queue + frontend assets):
+
+```bash
+composer run dev
+```
+
+### 6) Cek health endpoint
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+## Swagger / OpenAPI
+
+Setelah aplikasi berjalan, buka Swagger UI di:
+
+```text
+http://localhost:8000/api/documentation
+```
+
+Jika Swagger belum ter-generate atau masih kosong, jalankan:
+
+```bash
+php artisan l5-swagger:generate
+```
+
+Jika perlu reset cache:
+
+```bash
+php artisan route:clear
+php artisan config:clear
+php artisan serve
+```
+
 ## Architecture
 
 ```text
